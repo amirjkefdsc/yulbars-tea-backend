@@ -1,72 +1,138 @@
-# main.py (ВРЕМЕННАЯ ВЕРСИЯ ДЛЯ НАПОЛНЕНИЯ БД)
+# main.py (Финальная, чистая версия)
 
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
-from sqlalchemy import text
+from pydantic import BaseModel
+from typing import List, Optional
 
-# Импортируем все необходимое
-from database import SessionLocal, engine, Base
-from models import Product
+# Импортируем наши модули и модели
+from config import BOT_TOKEN, ADMIN_CHAT_ID
+from database import engine, Base, get_db
+import models
 
-# ====================================================================
-#           ВРЕМЕННЫЙ КОД ДЛЯ НАПОЛНЕНИЯ БАЗЫ ДАННЫХ
-# ====================================================================
-def seed_database():
-    db: Session = SessionLocal()
-    print("Запуск наполнения базы данных...")
-    try:
-        print("Создание таблиц...")
-        Base.metadata.create_all(bind=engine)
+# Импортируем Aiogram для отправки сообщений
+from aiogram import Bot
+from aiogram.client.default import DefaultBotProperties
+from aiogram.enums import ParseMode
 
-        print("Очистка таблицы продуктов...")
-        db.execute(text('TRUNCATE TABLE products RESTART IDENTITY;'))
+# --- Настройка ---
+# Эта строка гарантирует, что таблицы будут созданы, если их нет
+# Это безопасно оставлять в коде
+Base.metadata.create_all(bind=engine)
 
-        products_to_add = [
-            Product(title="Горный туман 2022", price=20.0),
-            Product(title="ТАНТРА 2023 Бай Хай Инь Жень", price=35.0),
-            Product(title="ДУХ 2023 Гу Шу Бай Ча", price=38.0),
-            Product(title="1000 тысяч 2024", price=70.0),
-            Product(title="Таоюань Габа Улун", price=20.0),
-            Product(title="Владыка Старого Чая (ВЕСНА 2010)", price=24.0),
-            Product(title="ОРЕХОВЫЙ Те Гуань Инь 2023", price=33.0),
-            Product(title="Аромат цветов Те Гуань Инь осень 2024", price=38.0),
-            Product(title="Дикий Горький Е Шен Шай Хун", price=18.0),
-            Product(title="Сосновые иглы из Ай Лао", price=22.0),
-            Product(title="Сливовый 2024 Е ШЕН АЙ ЛАО ХУН ЧА", price=38.0),
-            Product(title="ГРУШЕВЫЙ 2021", price=46.0),
-            Product(title="СЛАДКИЙ ТАБАЧОК Шен Пуэр", price=22.0),
-            Product(title="ПЛЕМЯ 2021 Шен Пуэр", price=22.0),
-            Product(title="ВЕСЕННИЕ ПОЧКИ 2023", price=23.0),
-            Product(title="Космос Гу Шу Айлао", price=28.0),
-            Product(title="сон подсоЗНАНИЯ Шен Пуэр", price=40.0),
-            Product(title="2400 Шен Пуэр 2022", price=140.0),
-            Product(title="Маденг Да Шу Ча Тоу", price=20.0),
-            Product(title="Мармеладка", price=28.0),
-            Product(title="МАЙ ДИ ЧУНЬ сян 2024", price=34.0),
-        ]
-
-        db.add_all(products_to_add)
-        db.commit()
-        print(f"УСПЕШНО ДОБАВЛЕНО {len(products_to_add)} ТОВАРОВ!")
-    except Exception as e:
-        print(f"ПРОИЗОШЛА ОШИБКА: {e}")
-        db.rollback()
-    finally:
-        db.close()
-        print("Наполнение базы данных завершено.")
-
-# ЗАПУСКАЕМ ФУНКЦИЮ НАПОЛНЕНИЯ ПРИ СТАРТЕ
-seed_database()
-
-# ====================================================================
-#           КОНЕЦ ВРЕМЕННОГО КОДА
-# ====================================================================
-
-# Создаем приложение FastAPI, но пока не будем добавлять эндпоинты,
-# чтобы сервер просто запустился, выполнил код выше и завершил работу.
 app = FastAPI()
 
-@app.get("/")
-def read_root():
-    return {"Status": "Seeding complete. Please remove seeding code and redeploy."}
+# Настройка CORS
+app.add_middleware(
+    CORSMiddleware,
+    # НЕ ЗАБУДЬТЕ ВСТАВИТЬ СЮДА ВАШУ РЕАЛЬНУЮ ССЫЛКУ NETLIFY
+    allow_origins=["http://localhost:3000", "https://legendary-quokka-028502.netlify.app/"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Инициализация Бота
+bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+
+
+# --- Модели данных для валидации ---
+class CartItem(BaseModel):
+    id: int
+    title: str
+    price: float
+    grams: int
+
+class OrderData(BaseModel):
+    userId: int
+    fullName: Optional[str] = None
+    phone: Optional[str] = None
+    address: Optional[str] = None
+    cartItems: List[CartItem]
+    totalPrice: float
+    deliveryCost: float
+
+
+# --- API эндпоинты ---
+
+@app.get("/api/products")
+def get_products(db: Session = Depends(get_db)):
+    """Отдает список всех товаров из БД."""
+    products = db.query(models.Product).all()
+    return products
+
+
+@app.post("/api/orders")
+async def create_order(order_data: OrderData):
+    """Принимает данные заказа, сохраняет в БД и отправляет уведомления."""
+    grand_total = order_data.totalPrice + order_data.deliveryCost
+
+    # Формируем сообщение
+    order_details = ""
+    for i, item in enumerate(order_data.cartItems, 1):
+        order_details += f"{i}. <b>{item.title.upper()}</b>\n"
+        order_details += f"   • {item.grams} гр. × {item.price:.1f} ₽ = {item.grams * item.price:.1f} ₽\n\n"
+
+    # Используем шаблон сообщения из вашего примера
+    message_text = f"""✨ <b>ВАШ ЗАКАЗ ОФОРМЛЕН</b> ✨
+━━━━━━━━━━━━━━━━━━━━━━━━
+
+📋 <b>СОСТАВ ЗАКАЗА:</b>
+{order_details}
+━━━━━━━━━━━━━━━━━━━━━━━━
+🛒 <b>СТОИМОСТЬ ТОВАРОВ:</b> {order_data.totalPrice} ₽
+🚚 <b>СТОИМОСТЬ ДОСТАВКИ:</b> {order_data.deliveryCost} ₽
+💵 <b>ИТОГО К ОПЛАТЕ: {grand_total} ₽</b>
+━━━━━━━━━━━━━━━━━━━━━━━━
+
+📦 <b>ИНФОРМАЦИЯ О ДОСТАВКЕ:</b>
+🚚 Способ доставки: СДЭК (до пункта выдачи)
+📍 Адрес: {order_data.address}
+👤 Получатель: {order_data.fullName}
+📞 Телефон: {order_data.phone}
+━━━━━━━━━━━━━━━━━━━━━━━━
+
+💳 <b>СУММА К ОПЛАТЕ: {grand_total} ₽</b>
+
+Перевод на карту:
+Точка Банк 🦩
+<code>2204 4502 5591 4472</code>
+
+Тинькоф 🐌
+<code>2200 7007 9062 3028</code>
+
+Сбербанк 🦔
+<code>2202 2080 1895 7390</code>
+
+<i>Комментарий к платежу не требуется</i>
+━━━━━━━━━━━━━━━━━━━━━━━━
+
+⚠️ <b>ВАЖНО! КАК ПОДТВЕРДИТЬ ОПЛАТУ:</b>
+
+1️⃣ Сделайте скриншот <b>ЧЕКА</b> об оплате
+   (через приложение банка: "Сохранить чек")
+<i>Скриншот перевода не является подтверждением</i>
+
+2️⃣ Прикрепите чек/скриншот чека ответным сообщением на ЭТО СООБЩЕНИЕ
+
+После подтверждения оплаты вам придет сообщение со ссылкой для отслеживания заказа
+
+🙏🏻 Спасибо за заказ! Мы ценим ваш выбор!
+"""
+
+    # Отправляем сообщения
+    try:
+        await bot.send_message(chat_id=order_data.userId, text=message_text)
+        admin_message = f"✅ Новый заказ от {order_data.fullName} на сумму {grand_total} ₽."
+        await bot.send_message(chat_id=ADMIN_CHAT_ID, text=admin_message)
+    except Exception as e:
+        print(f"Ошибка при отправке сообщения: {e}")
+
+    return {"status": "ok"}
+
+
+# --- Запуск сервера (для локальной разработки) ---
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8000)

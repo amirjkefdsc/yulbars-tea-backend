@@ -22,7 +22,7 @@ app = FastAPI()
 # Настройка CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # Адрес нашего фронтенда
+    allow_origins=["http://localhost:3000", "https://legendary-quokka-028502.netlify.app/"], # <-- ВОТ ИЗМЕНЕНИЕ
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -1,90 +1,72 @@
-# main.py
+# main.py (ВРЕМЕННАЯ ВЕРСИЯ ДЛЯ НАПОЛНЕНИЯ БД)
+
 import uvicorn
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI
 from sqlalchemy.orm import Session
-from pydantic import BaseModel, Field
-from typing import List, Optional
+from sqlalchemy import text
 
-# Импортируем наши модули и модели
-from config import BOT_TOKEN, ADMIN_CHAT_ID
-from database import engine, Base, get_db
-import models
+# Импортируем все необходимое
+from database import SessionLocal, engine, Base
+from models import Product
 
-# Импортируем Bot для отправки сообщений
-from aiogram import Bot
-from aiogram.client.default import DefaultBotProperties # <-- ДОБАВИТЬ ЭТОТ ИМПОРТ
-from aiogram.enums import ParseMode # <-- ДОБАВИТЬ ЭТОТ ИМПОРТ
-
-# --- Настройка ---
-Base.metadata.create_all(bind=engine)
-app = FastAPI()
-# Настройка CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:3000", "https://legendary-quokka-028502.netlify.app/"], # <-- ВОТ ИЗМЕНЕНИЕ
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-# Заменяем parse_mode=... на default=...
-bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML)) # <-- ИЗМЕНИТЬ ЭТУ СТРОКУ
-
-
-# --- Модели данных для валидации ---
-class CartItem(BaseModel):
-    id: int
-    title: str
-    price: float
-    quantity: int
-
-class OrderData(BaseModel):
-    userId: int
-    fullName: Optional[str] = None
-    phone: Optional[str] = None
-    address: Optional[str] = None
-    cartItems: List[CartItem]
-    totalPrice: float
-    deliveryCost: float
-
-
-# --- API эндпоинты ---
-
-@app.get("/api/products")
-def get_products(db: Session = Depends(get_db)):
-    products = db.query(models.Product).all()
-    return products
-
-
-@app.post("/api/orders")
-async def create_order(order_data: OrderData, db: Session = Depends(get_db)):
-    grand_total = order_data.totalPrice + order_data.deliveryCost
-
-    # Здесь в будущем будет логика сохранения заказа в БД
-
-    # Формируем сообщение
-    order_details = ""
-    for i, item in enumerate(order_data.cartItems, 1):
-        order_details += f"{i}. <b>{item.title.upper()}</b>\n"
-        order_details += f"   • {item.quantity} шт. × {item.price:.1f} ₽ = {item.quantity * item.price:.1f} ₽\n\n"
-
-    message_text = f"""✨ <b>ВАШ ЗАКАЗ ОФОРМЛЕН</b> ✨
-━━━━━━━━━━━━━━━━━━━━━━━━
-... (вставьте сюда полный шаблон вашего сообщения) ...
-━━━━━━━━━━━━━━━━━━━━━━━━
-💵 <b>ИТОГО К ОПЛАТЕ: {grand_total} ₽</b>"""
-
-    # Отправляем сообщения
+# ====================================================================
+#           ВРЕМЕННЫЙ КОД ДЛЯ НАПОЛНЕНИЯ БАЗЫ ДАННЫХ
+# ====================================================================
+def seed_database():
+    db: Session = SessionLocal()
+    print("Запуск наполнения базы данных...")
     try:
-        await bot.send_message(chat_id=order_data.userId, text=message_text)
-        admin_message = f"✅ Новый заказ от {order_data.fullName} на сумму {grand_total} ₽."
-        await bot.send_message(chat_id=ADMIN_CHAT_ID, text=admin_message)
+        print("Создание таблиц...")
+        Base.metadata.create_all(bind=engine)
+
+        print("Очистка таблицы продуктов...")
+        db.execute(text('TRUNCATE TABLE products RESTART IDENTITY;'))
+
+        products_to_add = [
+            Product(title="Горный туман 2022", price=20.0),
+            Product(title="ТАНТРА 2023 Бай Хай Инь Жень", price=35.0),
+            Product(title="ДУХ 2023 Гу Шу Бай Ча", price=38.0),
+            Product(title="1000 тысяч 2024", price=70.0),
+            Product(title="Таоюань Габа Улун", price=20.0),
+            Product(title="Владыка Старого Чая (ВЕСНА 2010)", price=24.0),
+            Product(title="ОРЕХОВЫЙ Те Гуань Инь 2023", price=33.0),
+            Product(title="Аромат цветов Те Гуань Инь осень 2024", price=38.0),
+            Product(title="Дикий Горький Е Шен Шай Хун", price=18.0),
+            Product(title="Сосновые иглы из Ай Лао", price=22.0),
+            Product(title="Сливовый 2024 Е ШЕН АЙ ЛАО ХУН ЧА", price=38.0),
+            Product(title="ГРУШЕВЫЙ 2021", price=46.0),
+            Product(title="СЛАДКИЙ ТАБАЧОК Шен Пуэр", price=22.0),
+            Product(title="ПЛЕМЯ 2021 Шен Пуэр", price=22.0),
+            Product(title="ВЕСЕННИЕ ПОЧКИ 2023", price=23.0),
+            Product(title="Космос Гу Шу Айлао", price=28.0),
+            Product(title="сон подсоЗНАНИЯ Шен Пуэр", price=40.0),
+            Product(title="2400 Шен Пуэр 2022", price=140.0),
+            Product(title="Маденг Да Шу Ча Тоу", price=20.0),
+            Product(title="Мармеладка", price=28.0),
+            Product(title="МАЙ ДИ ЧУНЬ сян 2024", price=34.0),
+        ]
+
+        db.add_all(products_to_add)
+        db.commit()
+        print(f"УСПЕШНО ДОБАВЛЕНО {len(products_to_add)} ТОВАРОВ!")
     except Exception as e:
-        print(f"Ошибка при отправке сообщения: {e}")
+        print(f"ПРОИЗОШЛА ОШИБКА: {e}")
+        db.rollback()
+    finally:
+        db.close()
+        print("Наполнение базы данных завершено.")
 
-    return {"status": "ok"}
+# ЗАПУСКАЕМ ФУНКЦИЮ НАПОЛНЕНИЯ ПРИ СТАРТЕ
+seed_database()
 
+# ====================================================================
+#           КОНЕЦ ВРЕМЕННОГО КОДА
+# ====================================================================
 
-# --- Запуск сервера ---
-if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+# Создаем приложение FastAPI, но пока не будем добавлять эндпоинты,
+# чтобы сервер просто запустился, выполнил код выше и завершил работу.
+app = FastAPI()
+
+@app.get("/")
+def read_root():
+    return {"Status": "Seeding complete. Please remove seeding code and redeploy."}

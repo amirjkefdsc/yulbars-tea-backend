@@ -25,7 +25,7 @@ app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
     # НЕ ЗАБУДЬТЕ ВСТАВИТЬ СЮДА ВАШУ РЕАЛЬНУЮ ССЫЛКУ NETLIFY
-    allow_origins=["http://localhost:3000", "https://ВАША-ССЫЛКА.netlify.app"],
+    allow_origins=["http://localhost:3000", "https://legendary-quokka-028502.netlify.app"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
